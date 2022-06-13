@@ -470,15 +470,13 @@ def predict_rpn(rpnmodel,x_batch,fmmodel,returnFM=False):
         return rpn_probs,rpn_bbox
 
 def predict_ch(image_batch,anchors,batchlen,fmmodel,rpnmodel,classheadmodel,roisize=[5,5]):
-    
-    
+        
     featuremaps=fmmodel(image_batch)
     rpn_logits,rpn_probs,rpn_boxes=rpnmodel(featuremaps)
     proposals=utils.get_proposals(rpn_probs,rpn_boxes,anchors)            
     rois=utils.roi_align(featuremaps,proposals,roisize)
     chlogits,chprobs,chdeltas= classheadmodel(rois)  
 
-    
     #we need the proposals witch are predicted to be foreground, than we need the exact classpredictions
     classes=np.argmax(chprobs,axis=-1)
     foregroundindices=tf.where(classes<2)
@@ -525,19 +523,29 @@ def predict_ch(image_batch,anchors,batchlen,fmmodel,rpnmodel,classheadmodel,rois
         #return fg_proposals,pred_masks,classlabels,softmax_scores,refined_boxes,preds_per_images
         return adjusted_boxes,adjusted_scores,adjusted_labels
 
-
 def predict_all(image_batch,anchors,batchlen,fmmodel,rpnmodel,classheadmodel,maskheadmodel,roisize=[5,5],maskroisize=[14,14]):
+    print(image_batch.shape)
+    featuremaps = fmmodel(image_batch)
+    print("Featuremap Out: ",featuremaps.shape)
     
+    rpn_logits,rpn_probs,rpn_boxes = rpnmodel(featuremaps)
+    print("RPN Model Out: ", rpn_logits.shape,rpn_probs.shape,rpn_boxes.shape)
     
-    featuremaps=fmmodel(image_batch)
-    rpn_logits,rpn_probs,rpn_boxes=rpnmodel(featuremaps)
     proposals=utils.get_proposals(rpn_probs,rpn_boxes,anchors)            
-    rois=utils.roi_align(featuremaps,proposals,roisize)
-    fm_rois=utils.roi_align(featuremaps,proposals,maskroisize)
-    predicted_masks=maskheadmodel(fm_rois)
-    chlogits,chprobs,chdeltas= classheadmodel(rois)  
-
+    print("get_proposals Out using anchors: ",proposals.shape)
     
+    rois=utils.roi_align(featuremaps,proposals,roisize)
+    print("roi_align with roisize =",roisize," : ",rois.shape)
+
+    fm_rois=utils.roi_align(featuremaps,proposals,maskroisize)
+    print("roi_align with maskroisize =",maskroisize," : ",fm_rois.shape)
+
+    predicted_masks=maskheadmodel(fm_rois)
+    print("Mask Model Out =",predicted_masks.shape)
+
+    chlogits,chprobs,chdeltas = classheadmodel(rois)  
+    print("Class Model Out =",chlogits.shape,chprobs.shape,chdeltas.shape)
+    # print(chdeltas)
     #we need the proposals witch are predicted to be foreground, than we need the exact classpredictions
     classes=np.argmax(chprobs,axis=-1)
     foregroundindices=tf.where(classes<2)
@@ -551,11 +559,9 @@ def predict_all(image_batch,anchors,batchlen,fmmodel,rpnmodel,classheadmodel,mas
     # we need to get the proper masks; the foregrund masks, and the channel of the proper class
     pred_masks=tf.gather_nd(predicted_masks,foregroundindices)
     
-    
     pred_masks=tf.transpose(pred_masks,[0,3,1,2])
     pred_masks=tf.gather_nd(pred_masks, classlabelindices)
     pred_masks=tf.expand_dims(pred_masks, axis=-1)
-    
     
     # we need to get the proper refinements; the foregrund refinements, and the channel of the proper refinement
     pred_box=tf.gather_nd(chdeltas,foregroundindices)
@@ -584,12 +590,13 @@ def predict_all(image_batch,anchors,batchlen,fmmodel,rpnmodel,classheadmodel,mas
     
     
     #we want to shift the foreground proposals
+    # pred_box is pixel shift in image size required to fg_proposals - shravan
     refined_boxes=tf.cast(utils.shift_bbox_pixelwise(fg_proposals,pred_box),tf.float32)
-        
     if np.all(np.equal(preds_per_images,0)):
         print('I found nothing on the batch.',preds_per_images)
         return 0,0,0,0
     else:
         adjusted_masks,adjusted_boxes,adjusted_scores,adjusted_labels=utils.adjust_to_batch(fg_proposals,classlabels,softmax_scores,refined_boxes,preds_per_images,batchlen,pred_masks)    
         #return fg_proposals,pred_masks,classlabels,softmax_scores,refined_boxes,preds_per_images
+
         return adjusted_masks,adjusted_boxes,adjusted_scores,adjusted_labels

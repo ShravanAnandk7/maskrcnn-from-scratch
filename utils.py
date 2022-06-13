@@ -408,6 +408,7 @@ def get_proposals(batch_of_pred_scores,batch_of_pred_deltas,anchors,proposal_cou
     origanchors=np.zeros((batchlen,proposal_count,4))
     
     for image in range(batchlen):
+        print(len(batchlen))
         pred_scores=batch_of_pred_scores[image]
         pred_deltas=batch_of_pred_deltas[image]
         # Find where predicted positive boxes
